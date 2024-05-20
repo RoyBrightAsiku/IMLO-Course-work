@@ -82,44 +82,48 @@ patience = 10
 
 # Training and Evaluation
 def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, epochs, deviceFlag_train):
+    since = time.time()
     model.to(deviceFlag_train)
+    best_val_loss = float('inf')
+    itrs = 0
     
-    for e in range(epochs):
-        since = time.time()
-        model.train()
-        best_val_loss = float('inf')
-        training_loss_running = 0
-        itrs = 0
-        
-        for inputs, labels in traindataloader:
-            itrs += 1
-            inputs = inputs.to(deviceFlag_train)
-            labels = labels.to(deviceFlag_train)
-            optimizer.zero_grad()
-            outputs = model.forward(inputs)
-            train_loss = TrCriterion(outputs, labels)
-            train_loss.backward()
-            optimizer.step()
-            training_loss_running += train_loss.item()
+    while time.time() - since < 41400:
+        for e in range(epochs):
+            model.train()
+            training_loss_running = 0
             
-            if itrs % 4590 == 0:
-                model.eval()
-                with torch.no_grad():
-                    validation_loss, val_acc = validation(model, validateloader, TrCriterion)
-                print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / 4590}, Validation Loss: {validation_loss}, Validation Acc: {val_acc}')
-                training_loss_running = 0
-                model.train()
+            for inputs, labels in traindataloader:
+                itrs += 1
+                inputs = inputs.to(deviceFlag_train)
+                labels = labels.to(deviceFlag_train)
+                optimizer.zero_grad()
+                outputs = model.forward(inputs)
+                train_loss = TrCriterion(outputs, labels)
+                train_loss.backward()
+                optimizer.step()
+                training_loss_running += train_loss.item()
                 
-                if validation_loss < best_val_loss:
-                        best_val_loss = validation_loss
-                        epochs_no_improve = 0
-                else:
-                    epochs_no_improve += 1
-                    if epochs_no_improve >= patience:
-                        print(f'Early stopping triggered at epoch {e+1}')
-                        return
-                
-        print(f'Epoch {e + 1} completed in {round(time.time() - since, 4)} sec')
+                if itrs % 4590 == 0:
+                    itrs=0
+                    model.eval()
+                    with torch.no_grad():
+                        validation_loss, val_acc = validation(model, validateloader, TrCriterion)
+                    print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / 4590}, Validation Loss: {validation_loss}, Validation Acc: {val_acc}')
+                    training_loss_running = 0
+                    model.train()
+                    
+                    if validation_loss < best_val_loss:
+                            best_val_loss = validation_loss
+                            epochs_no_improve = 0
+                    else:
+                        epochs_no_improve += 1
+                        if epochs_no_improve >= patience:
+                            print(f'Early stopping triggered at epoch {e+1}')
+                            return
+
+    else:
+        print(f'Completed in {round(time.time() - since, 4)} sec')
+            
 
 # Function for validation phase
 def validation(model, validateloader, ValCriterion):
