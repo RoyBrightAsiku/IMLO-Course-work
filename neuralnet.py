@@ -76,8 +76,9 @@ class FlowerNet(nn.Module):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = FlowerNet().to(device)
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.00001,weight_decay=1e-5)
 num_epochs = 20 
+patience = 10
 
 # Training and Evaluation
 def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, epochs, deviceFlag_train):
@@ -86,6 +87,7 @@ def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, e
     for e in range(epochs):
         since = time.time()
         model.train()
+        best_val_loss = float('inf')
         training_loss_running = 0
         itrs = 0
         
@@ -107,6 +109,15 @@ def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, e
                 print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / 4590}, Validation Loss: {validation_loss}, Validation Acc: {val_acc}')
                 training_loss_running = 0
                 model.train()
+                
+                if validation_loss < best_val_loss:
+                        best_val_loss = validation_loss
+                        epochs_no_improve = 0
+                else:
+                    epochs_no_improve += 1
+                    if epochs_no_improve >= patience:
+                        print(f'Early stopping triggered at epoch {e+1}')
+                        return
                 
         print(f'Epoch {e + 1} completed in {round(time.time() - since, 4)} sec')
 
