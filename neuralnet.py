@@ -1,3 +1,4 @@
+import time
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import torch.nn as nn
@@ -16,7 +17,7 @@ transform = transforms.Compose([
     transforms.Resize(256),
     transforms.CenterCrop(224),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
 # Load datasets
@@ -25,9 +26,9 @@ val_dataset = datasets.Flowers102(root='data', split='val', download=True, trans
 test_dataset = datasets.Flowers102(root='data', split='test', download=True, transform=transform)
 
 # Data loaders
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
 # Neural Net Model
 class FlowerNet(nn.Module):
@@ -78,34 +79,60 @@ criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 num_epochs = 20 
 
-#Training loop
-for epoch in range(num_epochs):
-    model.train()
-    for images, labels in train_loader:
-        images, labels = images.to(device), labels.to(device)
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-    print(f'Epoch {epoch+1} - Loss: {loss.item()}')
+# Training and Evaluation
+def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, epochs, deviceFlag_train):
+    model.to(deviceFlag_train)
+    
+    for e in range(epochs):
+        since = time.time()
+        model.train()
+        training_loss_running = 0
+        itrs = 0
+        
+        for inputs, labels in traindataloader:
+            itrs += 1
+            inputs = inputs.to(deviceFlag_train)
+            labels = labels.to(deviceFlag_train)
+            optimizer.zero_grad()
+            outputs = model.forward(inputs)
+            train_loss = TrCriterion(outputs, labels)
+            train_loss.backward()
+            optimizer.step()
+            training_loss_running += train_loss.item()
+            
+            if itrs % 4590 == 0:
+                model.eval()
+                with torch.no_grad():
+                    validation_loss, val_acc = validation(model, validateloader, TrCriterion)
+                print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / 4590}, Validation Loss: {validation_loss}, Validation Acc: {val_acc}')
+                training_loss_running = 0
+                model.train()
+                
+        print(f'Epoch {e + 1} completed in {round(time.time() - since, 4)} sec')
 
-#######                             ##########
-########   EVALUATION AND TESTING   ##########
+# Function for validation phase
+def validation(model, validateloader, ValCriterion):
+    val_loss_running = 0
+    acc = 0
+    for images, labels in validateloader:
+        images = images.to(device)
+        labels = labels.to(device)
+        output = model.forward(images)
+        val_loss_running += ValCriterion(output, labels).item()
+        output = torch.exp(output)
+        equals = (labels.data == output.max(dim=1)[1])
+        acc += equals.float().mean().item()
+    return val_loss_running / len(validateloader), acc / len(validateloader)*100
+
+########                            ##########
+########           TESTING          ##########
 ########                            ##########
 ########                            ##########
 
-model.eval()
-with torch.no_grad():
-    correct, total = 0, 0
-    for images, labels in val_loader:
-        images, labels = images.to(device), labels.to(device)
-        outputs = model(images)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-print(f'Accuracy of the network on test images: {100 * correct / total}%')
+# Start Training and Testing
+print('Starting Training and validation')
+train_eval(model, train_loader, val_loader, criterion, optimizer, num_epochs, device)
+print('Starting Testing')
 
 model.eval()
 with torch.no_grad():
