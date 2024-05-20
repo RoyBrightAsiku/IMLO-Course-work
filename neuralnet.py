@@ -5,6 +5,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
+# ---------------------- HYPERPARAMS ------------------------ #
+batch=4
+start_lr=0.0001
+number_of_epochs = 500
+early_stopping_patience = 20
+lr_scheduler_patience = 10
+drop_out = 0.1 
+
+# ----------------------- DATA AUGMENTATION ---------------------- #
 training_transform = transforms.Compose([
 	transforms.RandomRotation(30),
 	transforms.RandomResizedCrop(224),
@@ -26,11 +35,11 @@ val_dataset = datasets.Flowers102(root='data', split='val', download=True, trans
 test_dataset = datasets.Flowers102(root='data', split='test', download=True, transform=transform)
 
 # Data loaders
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=batch, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=batch, shuffle=False)
 
-# Neural Net Model
+# -------------------------- NEURAL NET MODEL ------------------------ #
 class FlowerNet(nn.Module):
     def __init__(self):
         super(FlowerNet,self).__init__()
@@ -54,7 +63,7 @@ class FlowerNet(nn.Module):
         self.fc3 = nn.Linear(512, 256)
         self.fc4 = nn.Linear(256, 102)
         
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(drop_out)
 
     def forward(self, x):
         
@@ -76,12 +85,17 @@ class FlowerNet(nn.Module):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = FlowerNet().to(device)
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001,weight_decay=1e-5)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, min_lr=0.00001)
-num_epochs = 700 
-patience = 20
+optimizer = torch.optim.Adam(model.parameters(), lr=start_lr,weight_decay=1e-5)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=lr_scheduler_patience, min_lr=0.00001)
+num_epochs = number_of_epochs 
+patience = early_stopping_patience
 
-# Training and Evaluation
+# Function to get the current learning rate from the optimizer
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
+
+# Training Function
 def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, epochs, deviceFlag_train):
     since = time.time()
     model.to(deviceFlag_train)
@@ -105,12 +119,19 @@ def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, e
                 training_loss_running += train_loss.item()
                 
                 if itrs % 4590 == 0:
+                    print(f'Checking validation after {(time.time() - since) // 3600 }h {((time.time() - since) % 3600) // 60}m {(time.time() - since) % 60}s of training')
                     itrs=0
                     model.eval()
                     with torch.no_grad():
                         validation_loss, val_acc = validation(model, validateloader, TrCriterion)
-                    print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / 4590}, Validation Loss: {validation_loss}, Validation Acc: {val_acc}')
+                    print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / itrs}, Validation Loss: {validation_loss}, Validation Acc: {val_acc}')
+                    
+                    current_lr = get_lr(optimizer)
                     scheduler.step(validation_loss)
+                    new_lr = get_lr(optimizer)
+                    
+                    if new_lr != current_lr:
+                        print(f"Learning rate changed from {current_lr} to {new_lr} at epoch {e+1}")
                     
                     if validation_loss < best_val_loss:
                             best_val_loss = validation_loss
@@ -118,14 +139,14 @@ def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, e
                     else:
                         epochs_no_improve += 1
                         if epochs_no_improve >= patience:
-                            print(f'Early stopping triggered at epoch {e+1}')
+                            print(f'Early stopping triggered at epoch {e+1} after {(time.time() - since) // 3600 }h {((time.time() - since) % 3600) // 60}m {(time.time() - since) % 60}s')
                             return
-                    
+                     
                     training_loss_running = 0
                     model.train()
-
+            print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / len(traindataloader)}')
     else:
-        print(f'Completed in {round(time.time() - since, 4)} sec')
+        print(f'Completed in {(time.time() - since) // 3600 }h {((time.time() - since) % 3600) // 60}m {(time.time() - since) % 60}s')
             
 
 # Function for validation phase
@@ -142,16 +163,12 @@ def validation(model, validateloader, ValCriterion):
         acc += equals.float().mean().item()
     return val_loss_running / len(validateloader), acc / len(validateloader)*100
 
-########                            ##########
-########           TESTING          ##########
-########                            ##########
-########                            ##########
-
-# Start Training and Testing
-print('Starting Training and validation')
+# ----------------------------- TRAINING ----------------------------------- #
+print('**************** Training and Validation begins *****************')
 train_eval(model, train_loader, val_loader, criterion, optimizer, num_epochs, device)
-print('Starting Testing')
 
+# ----------------------------- TESTING ----------------------------------- #
+print('**************** TESTING begins ****************')
 model.eval()
 with torch.no_grad():
     correct, total = 0, 0
