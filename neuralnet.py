@@ -61,7 +61,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = FlowerNet().to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-
 num_epochs = 20 
 
 #Training loop
@@ -93,49 +92,26 @@ for epoch in range(num_epochs):
 ########                            ##########
 
 model.eval()
-validation_loss = 0.0
-
-total = 0
-correct = 0
-
 with torch.no_grad():
+    correct, total = 0, 0
     for images, labels in val_loader:
         images, labels = images.to(device), labels.to(device)
         outputs = model(images)
-        loss = criterion(outputs, labels)
-        validation_loss += loss.item() * images.size(0)
-        
-        # Calculate accuracy
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-validation_loss /= len(val_loader.dataset)
-accuracy = 100 * correct / total
-
-print(f'Validation Loss: {validation_loss:.4f}')
-print(f'Accuracy of the network on the test images: {accuracy}%')
-
-test_loss = 0.0
-
-total = 0
-correct = 0
+print(f'Accuracy of the network on test images: {100 * correct / total}%')
 
 model.eval()
 with torch.no_grad():
+    correct, total = 0, 0
     for images, labels in test_loader:
         images, labels = images.to(device), labels.to(device)
         outputs = model(images)
-        loss = criterion(outputs, labels)
-        test_loss += loss.item() * images.size(0)
-        
-        # Calculate accuracy
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-test_loss /= len(test_loader.dataset)
-accuracy = 100 * correct / total
+print(f'Accuracy of the network on test images: {100 * correct / total}%')
 
-print(f'Test Loss: {test_loss:.4f}')
-print(f'Accuracy of the network on the test images: {accuracy}%')
