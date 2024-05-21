@@ -7,10 +7,9 @@ import torch
 
 # ---------------------- HYPERPARAMS ------------------------ #
 batch=4
-start_lr=0.0001
+start_lr=0.00001
 number_of_epochs = 500
 early_stopping_patience = 20
-lr_scheduler_patience = 10
 drop_out = 0.1 
 
 # ----------------------- DATA AUGMENTATION ---------------------- #
@@ -86,14 +85,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = FlowerNet().to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=start_lr,weight_decay=1e-5)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=lr_scheduler_patience, min_lr=0.00001)
 num_epochs = number_of_epochs 
 patience = early_stopping_patience
-
-# Function to get the current learning rate from the optimizer
-def get_lr(optimizer):
-    for param_group in optimizer.param_groups:
-        return param_group['lr']
 
 # Training Function
 def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, epochs, deviceFlag_train):
@@ -101,52 +94,45 @@ def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, e
     model.to(deviceFlag_train)
     best_val_loss = float('inf')
     itrs = 0
+    epochs_no_improve = 0
     
-    while time.time() - since < 41400:
-        for e in range(epochs):
-            model.train()
-            training_loss_running = 0
+    for e in range(epochs):
+        model.train()
+        training_loss_running = 0
+        
+        for inputs, labels in traindataloader:
+            itrs += 1
+            inputs = inputs.to(deviceFlag_train)
+            labels = labels.to(deviceFlag_train)
+            optimizer.zero_grad()
+            outputs = model.forward(inputs)
+            train_loss = TrCriterion(outputs, labels)
+            train_loss.backward()
+            optimizer.step()
+            training_loss_running += train_loss.item()
             
-            for inputs, labels in traindataloader:
-                itrs += 1
-                inputs = inputs.to(deviceFlag_train)
-                labels = labels.to(deviceFlag_train)
-                optimizer.zero_grad()
-                outputs = model.forward(inputs)
-                train_loss = TrCriterion(outputs, labels)
-                train_loss.backward()
-                optimizer.step()
-                training_loss_running += train_loss.item()
+            if itrs % 4590 == 0:
+                print(f'Checking validation after {(time.time() - since) // 3600 }h {((time.time() - since) % 3600) // 60}m {(time.time() - since) % 60}s of training')
+                model.eval()
+                with torch.no_grad():
+                    validation_loss, val_acc = validation(model, validateloader, TrCriterion)
+                print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / itrs}, Validation Loss: {validation_loss}, Validation Acc: {val_acc}')
                 
-                if itrs % 4590 == 0:
-                    print(f'Checking validation after {(time.time() - since) // 3600 }h {((time.time() - since) % 3600) // 60}m {(time.time() - since) % 60}s of training')
-                    itrs=0
-                    model.eval()
-                    with torch.no_grad():
-                        validation_loss, val_acc = validation(model, validateloader, TrCriterion)
-                    print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / itrs}, Validation Loss: {validation_loss}, Validation Acc: {val_acc}')
-                    
-                    current_lr = get_lr(optimizer)
-                    scheduler.step(validation_loss)
-                    new_lr = get_lr(optimizer)
-                    
-                    if new_lr != current_lr:
-                        print(f"Learning rate changed from {current_lr} to {new_lr} at epoch {e+1}")
-                    
-                    if validation_loss < best_val_loss:
-                            best_val_loss = validation_loss
-                            epochs_no_improve = 0
-                    else:
-                        epochs_no_improve += 1
-                        if epochs_no_improve >= patience:
-                            print(f'Early stopping triggered at epoch {e+1} after {(time.time() - since) // 3600 }h {((time.time() - since) % 3600) // 60}m {(time.time() - since) % 60}s')
-                            return
-                     
-                    training_loss_running = 0
-                    model.train()
-            print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / len(traindataloader)}')
-    else:
-        print(f'Completed in {(time.time() - since) // 3600 }h {((time.time() - since) % 3600) // 60}m {(time.time() - since) % 60}s')
+                if validation_loss < best_val_loss:
+                        best_val_loss = validation_loss
+                        
+                        torch.save(model.state_dict(), 'best_model.pth')
+                        print("Model saved as 'best_model.pth'")
+                else:
+                    epochs_no_improve += 1
+                    if epochs_no_improve >= patience:
+                        print(f'Early stopping triggered at epoch {e+1} after {(time.time() - since) // 3600 }h {((time.time() - since) % 3600) // 60}m {(time.time() - since) % 60}s')
+                        return
+                 
+                itrs=0
+                training_loss_running = 0
+                model.train()
+        print(f'Epoch: {e + 1}/{epochs}, Train Loss: {training_loss_running / len(traindataloader)}')
             
 
 # Function for validation phase
@@ -180,4 +166,3 @@ with torch.no_grad():
         correct += (predicted == labels).sum().item()
 
 print(f'Accuracy of the network on test images: {100 * correct / total}%')
-
