@@ -123,6 +123,7 @@ def train_eval(model, traindataloader, validateloader, TrCriterion, optimizer, e
                         
                         torch.save(model.state_dict(), 'best_model.pth')
                         print("Model saved as 'best_model.pth'")
+                        continue
                 else:
                     epochs_no_improve += 1
                     if epochs_no_improve >= patience:
@@ -152,6 +153,8 @@ def validation(model, validateloader, ValCriterion):
 # ----------------------------- TRAINING ----------------------------------- #
 print('**************** Training and Validation begins *****************')
 train_eval(model, train_loader, val_loader, criterion, optimizer, num_epochs, device)
+
+model.load_state_dict(torch.load('best_model.pth'))
 
 # ----------------------------- TESTING ----------------------------------- #
 print('**************** TESTING begins ****************')
